@@ -22,10 +22,10 @@ The application mimics a production-grade SaaS product and supports manual penet
 
 | # | Vulnerability             | Affected Path                                | PoC                                      |
 |---|---------------------------|----------------------------------------------|------------------------------------------|
-| 1 | SQLi (Auth Bypass)        | *POST* `/auth/login` (JSON body)              | `{ "username": {"$ne": null}, "password": {"$ne": null} }` |
+| 1 | SQLi – Login Page         | *POST* `/auth/login` (username parameter)     | `%2527 UNION SELECT NULL--+`            |
 | 2 | SQLi (Blind – Time-Based) | *GET* `/restaurants?filter=`                  | `filter=1' OR IF(1=1, SLEEP(5), 0)--+`   |
 | 3 | Reflected XSS             | *GET* `/search` (q parameter)                 | `/search?q=<math href=javascript:alert(1)>` |
-| 4 | Stored XSS                | *POST* `/review/add`                          | `<iframe srcdoc="<script>fetch('/cookie')</script>"></iframe>` |
+| 4 | DOM-Based XSS – Feedback Preview | *GET* `/feedback/preview` (hash parameter) | `#/feedback=<img src=x onerror=alert(1)>` |
 | 5 | SSTI (Template Eval)      | *POST* `/admin/announcement`                 | `{{ ''.join(['__cla','ss__']) }}`       |
 | 6 | SSTI (RCE)                | *POST* `/admin/offer`                        | `{{ (7).__pow__(2) }}`                   |
 | 7 | IDOR (View Order)         | *GET* `/order?id=4a7d1ed414474e4033ac29ccb8653d9b` | Access another user's order data |
@@ -42,20 +42,19 @@ The application mimics a production-grade SaaS product and supports manual penet
 | 18 | Open Redirect (Admin)    | *GET* `/admin/redirect?to=`              | `/admin/redirect?to=https:evil.com`     |
 | 19 | Vulnerable Component     | Flask <=0.11                              | Trigger known RCE vulnerability         |
 | 20 | Vulnerable Component     | Requests <=2.18.0                         | SSRF via HTTP request handling          |
-| 21 | DOM-Based XSS            | *GET* `/feedback/preview` (hash parameter)  | `#/feedback=<img src=x onerror=alert(1)>` |
-
 ---
 
 ## Vulnerabilities (Detailed)
 
-### 1. SQLi – Authentication Bypass
-**Summary:** The login API uses partial parameterized queries, but still concatenates user input from the JSON body. This can be bypassed by using a JSON-style payload to trick the backend logic.  
+### 1. SQLi – Login Page
+**Summary:** The login page performs unsafe SQL concatenation when handling the `username` parameter. Detection triggers when a single quote `'` is used in the input.  
 **Steps to Reproduce:**
-1. Send a POST request to `/auth/login` with the following JSON body:
-```json
-{ "username": {"$ne": null}, "password": {"$ne": null} }
-```
-2. Gain authenticated session without valid credentials.
+1. Go to `/auth/login` and enter a username containing a single quote `'`. Observe an error or database warning.  
+2. Bypass detection by using a **double URL-encoded single quote** to break the query:  
+   ```
+   %2527 UNION SELECT NULL--+
+   ```
+3. You will gain unauthorized access or leak data.  
 **PoC screenshot or unlisted video URL:**  
 > **Note:** SOON WILL BE PRESENTED
 
@@ -81,11 +80,14 @@ The application mimics a production-grade SaaS product and supports manual penet
 
 ---
 
-### 4. Stored XSS – Review System
-**Summary:** Review inputs are not properly sanitized, enabling persistent XSS.  
+### 4. DOM-Based XSS – Feedback Preview
+**Summary:** The feedback preview page reads the `location.hash` from the URL and injects it into the DOM using `innerHTML`. This enables DOM-based XSS.  
 **Steps to Reproduce:**
-1. Submit review payload `<iframe srcdoc="<script>fetch('/cookie')</script>"></iframe>`
-2. Visit the review page and capture sensitive data
+1. Visit the feedback preview page:  
+   ```
+   /feedback/preview#/feedback=<img src=x onerror=alert(1)>
+   ```
+2. The payload executes directly in the victim’s browser.  
 **PoC screenshot or unlisted video URL:**  
 > **Note:** SOON WILL BE PRESENTED
 
@@ -246,16 +248,6 @@ The application mimics a production-grade SaaS product and supports manual penet
 **Steps to Reproduce:**
 1. Scan dependencies and find Requests <=2.18.0
 2. Trigger known SSRF exploit
-**PoC screenshot or unlisted video URL:**  
-> **Note:** SOON WILL BE PRESENTED
-
----
-
-### 21. DOM-Based XSS – Feedback Preview
-**Summary:** The feedback preview page reads the `location.hash` value and renders it directly into the DOM using `innerHTML`, making it vulnerable to DOM-based XSS.  
-**Steps to Reproduce:**
-1. Visit `/feedback/preview#/feedback=<img src=x onerror=alert(1)>`
-2. Observe JavaScript execution in the victim’s browser
 **PoC screenshot or unlisted video URL:**  
 > **Note:** SOON WILL BE PRESENTED
 
